@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Baterias Pro</title>
+    
+    <!-- Fontes e Estilos -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React e Bibliotecas via CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide-react/dist/umd/lucide-react.js"></script>
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+
+    <style>
+        :root { --neon-green: #4ade80; --deep-bg: #050b14; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--deep-bg); color: #f8fafc; overflow-x: hidden; margin: 0; }
+        .cyber-grid {
+            background-size: 40px 40px;
+            background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: -2;
+            mask-image: radial-gradient(circle at 50% 50%, black 40%, transparent 100%);
+            -webkit-mask-image: radial-gradient(circle at 50% 50%, black 40%, transparent 100%);
+        }
+        .aurora-blob { position: fixed; filter: blur(80px); z-index: -1; opacity: 0.4; animation: float 10s ease-in-out infinite; }
+        @keyframes float { 
+            0% { transform: translate(0px, 0px) scale(1); } 
+            33% { transform: translate(30px, -50px) scale(1.1); } 
+            66% { transform: translate(-20px, 20px) scale(0.9); } 
+            100% { transform: translate(0px, 0px) scale(1); } 
+        }
+        .glass-panel { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4ade80; }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "react-markdown": "https://aistudiocdn.com/react-markdown@^10.1.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+    "recharts": "https://aistudiocdn.com/recharts@^3.4.1",
+    "vite": "https://aistudiocdn.com/vite@^7.2.4",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1"
+  }
+}
+</script>
+</head>
+<body>
+    <div class="cyber-grid"></div>
+    <div class="aurora-blob" style="top: -10%; left: -10%; width: 50vw; height: 50vw; background: radial-gradient(circle, rgba(34,197,94,0.15) 0%, rgba(0,0,0,0) 70%);"></div>
+    <div class="aurora-blob" style="bottom: -10%; right: -10%; width: 60vw; height: 60vw; background: radial-gradient(circle, rgba(59,130,246,0.1) 0%, rgba(0,0,0,0) 70%); animation-delay: -5s;"></div>
+    
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- IMPORTAÇÕES GLOBAIS ---
+        const { useState, useEffect, useMemo } = React;
+        const { 
+            Sun, Battery, Zap, MapPin, ChevronRight, ChevronLeft, 
+            RotateCcw, Calculator, FileText, Loader2, Lightbulb, 
+            LayoutDashboard, Home, Info, Settings, DollarSign, Building2,
+            BatteryCharging, HardHat, User, Gauge, BrainCircuit, CheckCircle, Instagram, Star, Sparkles,
+            TrendingUp, AlertTriangle, Unplug, Check, X, Send, Download, Leaf, ShieldCheck, 
+            PenTool, Landmark, Phone, Mail, Scale, BookOpen, Fan, Server, Router, Tv, ArrowRight, UtilityPole, Ban, CheckCircle2
+        } = window.LucideReact;
+        
+        const { 
+            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, 
+            ResponsiveContainer, Cell, PieChart, Pie, Legend, AreaChart, Area, LineChart, Line 
+        } = window.Recharts;
+
+        // --- CONSTANTES ---
+        const MODULE_POWER_Wp = 640;
+        const BESS_BATTERY_CAPACITY_KWH = 5.0;
+        const PV_PERFORMANCE_FACTOR = 0.8;
+        const FATOR_COMPENSACAO_LIQUIDA = 0.85;
+        const BESS_DOD_FACTOR = 0.8;
+        const INFLACAO_ENERGETICA_ANUAL = 0.08;
+        const TAXA_DESCONTO_ANUAL = 0.10;
+        const CUSTO_MANUTENCAO_ANUAL = 0.005;
+        const COMMERCIAL_INVERTER_KW = [3.0, 3.5, 3.6, 4.0, 4.6, 5.0, 6.0, 7.0, 7.5, 8.0, 8.2, 9.0, 10.0, 12.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 75.0, 100.0];
+        const BRAZILIAN_STATES = [ 
+            { uf: 'AC', nome: 'Acre' }, { uf: 'AL', nome: 'Alagoas' }, { uf: 'AP', nome: 'Amapá' }, 
+            { uf: 'AM', nome: 'Amazonas' }, { uf: 'BA', nome: 'Bahia' }, { uf: 'CE', nome: 'Ceará' }, 
+            { uf: 'DF', nome: 'Distrito Federal' }, { uf: 'ES', nome: 'Espírito Santo' }, { uf: 'GO', nome: 'Goiás' }, 
+            { uf: 'MA', nome: 'Maranhão' }, { uf: 'MT', nome: 'Mato Grosso' }, { uf: 'MS', nome: 'Mato Grosso do Sul' }, 
+            { uf: 'MG', nome: 'Minas Gerais' }, { uf: 'PA', nome: 'Pará' }, { uf: 'PB', nome: 'Paraíba' }, 
+            { uf: 'PR', nome: 'Paraná' }, { uf: 'PE', nome: 'Pernambuco' }, { uf: 'PI', nome: 'Piauí' }, 
+            { uf: 'RJ', nome: 'Rio de Janeiro' }, { uf: 'RN', nome: 'Rio Grande do Norte' }, { uf: 'RS', nome: 'Rio Grande do Sul' }, 
+            { uf: 'RO', nome: 'Rondônia' }, { uf: 'RR', nome: 'Roraima' }, { uf: 'SC', nome: 'Santa Catarina' }, 
+            { uf: 'SP', nome: 'São Paulo' }, { uf: 'SE', nome: 'Sergipe' }, { uf: 'TO', nome: 'Tocantins' } 
+        ];
+        const HSP_BY_STATE = { 'AC': 4.9, 'AL': 5.3, 'AP': 4.7, 'AM': 4.6, 'BA': 5.6, 'CE': 5.7, 'DF': 5.2, 'ES': 4.9, 'GO': 5.3, 'MA': 5.4, 'MT': 5.1, 'MS': 5.0, 'MG': 5.1, 'PA': 4.8, 'PB': 5.6, 'PR': 4.5, 'PE': 5.5, 'PI': 5.8, 'RJ': 4.8, 'RN': 5.9, 'RS': 4.3, 'RO': 4.6, 'RR': 4.9, 'SC': 4.4, 'SP': 4.7, 'SE': 5.3, 'TO': 5.2, 'PADRAO': 5.0 };
+        const TARIFF_DATA = {'SP': { default: { distributor: 'CPFL', price: 0.92 }, cities: {'São Paulo': { distributor: 'Enel SP', price: 0.85 }} }, 'RJ': { default: { distributor: 'Enel RJ', price: 1.05 }, cities: {'Rio de Janeiro': { distributor: 'Light', price: 1.15 }} }, 'PADRAO': { default: { distributor: 'Concessionária Local', price: 0.90 }, cities: {} }};
+
+        // --- LÓGICA DE CÁLCULO ---
+        const calculateDimensioning = (data) => {
+            const { systemType, consumoMensalKWh, horasBackup, cargas127V, cargas220V, cargas380V, fatorSimultaneidade, estado, custoKwh, systemVoltage, kWhApuradosMes } = data;
+            const hspState = HSP_BY_STATE[estado] || HSP_BY_STATE['PADRAO'];
+            let energiaBessKwh = 0, effectiveLoadKw = 0, totalLoadWatts = 0, potenciaInversorKw = '0.0', suggestedInverterBess = '';
+            const isBess = systemType === 'HIB' || systemType === 'OFF';
+            let localCargas127V = cargas127V || 0, localCargas220V = cargas220V || 0, localCargas380V = cargas380V || 0;
+            let dimensionamentoPorCargas = true;
+
+            if (isBess) {
+                if (systemType === 'OFF' && kWhApuradosMes > 0 && localCargas127V===0 && localCargas220V===0 && localCargas380V===0) dimensionamentoPorCargas = false;
+                totalLoadWatts = localCargas127V + localCargas220V + localCargas380V;
+                if (totalLoadWatts === 0 && systemType === 'HIB' && consumoMensalKWh > 0) { totalLoadWatts = ((consumoMensalKWh / 30) / 24) * 2.0 * 1000; dimensionamentoPorCargas = true; }
+                effectiveLoadKw = (totalLoadWatts * (fatorSimultaneidade / 100)) / 1000;
+                energiaBessKwh = dimensionamentoPorCargas ? (effectiveLoadKw * horasBackup / BESS_DOD_FACTOR) : ((kWhApuradosMes / 30) / BESS_DOD_FACTOR);
+                if(!dimensionamentoPorCargas) effectiveLoadKw = energiaBessKwh / 5;
+                suggestedInverterBess = (localCargas127V > 0 && localCargas220V > 0) ? "Split-Phase" : (localCargas380V > 0 ? "Trifásico" : "Monofásico");
+            }
+
+            let potenciaPvKwP = 0, numModulos = 0, dailyProductionKwh = 0, dailyConsumptionKwh = 0, economiaMensalEstimada = 0, suggestedInverterPvKw = '';
+            if (systemType !== null) {
+                let dailyEnergyToCover = (systemType === 'OFF' && dimensionamentoPorCargas) ? effectiveLoadKw * 24 * 0.5 : consumoMensalKWh / 30;
+                potenciaPvKwP = (dailyEnergyToCover / (hspState * PV_PERFORMANCE_FACTOR));
+                numModulos = Math.ceil((potenciaPvKwP * 1000) / MODULE_POWER_Wp);
+                dailyProductionKwh = potenciaPvKwP * hspState * PV_PERFORMANCE_FACTOR;
+                economiaMensalEstimada = (consumoMensalKWh * custoKwh) * FATOR_COMPENSACAO_LIQUIDA;
+                suggestedInverterPvKw = (potenciaPvKwP / 1.5).toFixed(1);
+            }
+            
+            if (isBess) {
+                const minPowerByLoad = effectiveLoadKw > 0 ? effectiveLoadKw : 3.0;
+                let targetInv = Math.max(minPowerByLoad, potenciaPvKwP/1.3);
+                potenciaInversorKw = targetInv.toFixed(1);
+            }
+
+            // Financials
+            const investment = (potenciaPvKwP * 3200) + (energiaBessKwh * 3800) + (parseFloat(potenciaInversorKw||suggestedInverterPvKw) * 2000);
+            const annualSavings = economiaMensalEstimada * 12;
+            const payback = investment / annualSavings;
+            const accumulatedFlow = Array.from({length: 26}, (_, i) => (annualSavings * i) - investment);
+
+            return {
+                energiaBessKwh: energiaBessKwh.toFixed(1), numBaterias: Math.ceil(energiaBessKwh / BESS_BATTERY_CAPACITY_KWH),
+                potenciaInversorKw, effectiveLoadKw: effectiveLoadKw.toFixed(1), suggestedInverterBess, hybridInverterPower: potenciaInversorKw,
+                potenciaPvKwP: potenciaPvKwP.toFixed(2), numModulos, hspUsado: hspState.toFixed(2),
+                dailyProductionKwh, dailyConsumptionKwh, economiaMensalEstimada: economiaMensalEstimada.toFixed(2), suggestedInverterPvKw,
+                cargas127V: localCargas127V, cargas220V: localCargas220V, cargas380V: localCargas380V, FATOR_ECONOMIA_REAL: FATOR_COMPENSACAO_LIQUIDA,
+                totalLoadWatts, valorInvestimentoEstimado: investment, vpl: investment * 1.5, tir: 15, paybackAnos: payback || 0,
+                custoInercia25Anos: annualSavings * 25, fluxoCaixaAcumulado: accumulatedFlow, lcoe: 0.35
+            };
+        };
+
+        // --- COMPONENTES UI ---
+        const InputField = ({ label, type, value, onChange, Icon, description, className, ...props }) => (
+            <div className="group w-full">
+                <label className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-2.5 flex items-center gap-2 group-focus-within:text-green-400 transition-colors">
+                    <Icon className="w-4 h-4 text-slate-600 group-focus-within:text-green-400 transition-colors" /> {label}
+                </label>
+                <div className="relative">
+                    <input type={type} value={value} onChange={onChange} className={`w-full bg-slate-900/40 border border-white/10 text-white rounded-xl py-4 pl-5 pr-4 focus:ring-1 focus:ring-green-500 outline-none text-lg font-medium ${className}`} {...props} />
+                </div>
+                {description && <p className="mt-2 text-xs text-slate-500 font-medium ml-1">{description}</p>}
+            </div>
+        );
+
+        const SystemOption = ({ icon: Icon, title, description, isSelected, onClick }) => (
+            <div className="flex flex-col items-center group cursor-pointer" onClick={onClick}>
+                <div className={`relative w-full aspect-[4/3] rounded-[2rem] border transition-all duration-500 flex flex-col items-center justify-center overflow-hidden backdrop-blur-md ${isSelected ? 'border-green-400 bg-green-500/10 shadow-[0_0_50px_rgba(74,222,128,0.2)] scale-105' : 'border-white/10 bg-slate-900/40 hover:border-green-500/30'}`}>
+                    {isSelected && <div className="absolute top-6 right-6 bg-green-500 text-black p-1.5 rounded-full"><Check size={16} /></div>}
+                    <div className={`relative z-10 p-6 rounded-2xl ${isSelected ? 'bg-green-500 text-black' : 'bg-white/5 text-slate-400'}`}><Icon className="w-12 h-12" /></div>
+                    <h4 className="relative z-10 text-2xl font-bold mt-6 text-white">{title}</h4>
+                </div>
+                <div className="mt-6 px-4 text-center max-w-xs"><p className={`text-sm ${isSelected ? 'text-green-300' : 'text-slate-500'}`}>{description}</p></div>
+            </div>
+        );
+
+        const ResultItem = ({ icon: Icon, title, value, description, highlight }) => (
+            <div className={`flex flex-col p-6 rounded-2xl border backdrop-blur-md hover:-translate-y-1 transition-all ${highlight ? 'border-green-500/30 bg-green-900/10 shadow-[0_0_30px_rgba(74,222,128,0.1)]' : 'border-white/5 bg-slate-900/40'}`}>
+                <div className="flex items-center justify-between mb-4"><div className={`p-3 rounded-xl ${highlight ? 'bg-green-500 text-black' : 'bg-white/5 text-slate-400'}`}><Icon className="w-6 h-6" /></div></div>
+                <div className="mt-auto"><p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{title}</p><p className={`text-2xl font-black tracking-tight ${highlight ? 'text-white' : 'text-slate-200'}`}>{value}</p><p className={`text-xs mt-2 font-medium ${highlight ? 'text-green-400' : 'text-slate-500'}`}>{description}</p></div>
+            </div>
+        );
+
+        const StepIndicator = ({ step, title, currentStep }) => (
+            <div className="flex flex-col items-center relative z-10 w-24">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 mb-2 ${currentStep === step ? 'border-green-400 bg-green-900/20 text-green-400' : currentStep > step ? 'border-green-600 bg-green-600 text-white' : 'border-slate-700 bg-slate-800 text-slate-500'}`}>{currentStep > step ? <Check size={18} /> : <span className="font-semibold">{step}</span>}</div>
+                <span className="text-xs text-center font-medium text-slate-600">{title}</span>
+            </div>
+        );
+
+        // --- GRÁFICOS E SCHEMATICS ---
+        const CashFlowChart = ({ dataPoints }) => {
+            const data = dataPoints.map((v, i) => ({ year: i, value: v }));
+            return (
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={data}><defs><linearGradient id="colorFlow" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/><stop offset="95%" stopColor="#22c55e" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} /><XAxis dataKey="year" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} /><YAxis stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} /><RechartsTooltip /><Area type="monotone" dataKey="value" stroke="#22c55e" fill="url(#colorFlow)" /></AreaChart>
+                </ResponsiveContainer>
+            );
+        };
+        const ZeroGridSchematic = () => <div className="w-full bg-white p-6 rounded-2xl flex flex-col items-center border border-slate-200"><div className="flex gap-4 items-center"><Sun size={24} className="text-amber-500"/><Zap size={32} className="text-blue-600"/><Home size={24} className="text-green-600"/><Ban size={24} className="text-red-500"/></div><p className="text-xs text-slate-500 mt-2">Bloqueio Ativo de Injeção</p></div>;
+        const BessOperationSchematic = () => <div className="w-full bg-white p-6 rounded-2xl border border-slate-200"><div className="flex justify-around"><Sun className="text-amber-500"/><Zap className="text-blue-600"/><Home className="text-slate-600"/></div><div className="text-center mt-4"><BatteryCharging className="mx-auto text-green-600"/><p className="text-xs">Fluxo Inteligente</p></div></div>;
+        const CriticalLoadsSchematic = () => <div className="w-full bg-white p-6 rounded-2xl border border-slate-200 flex justify-around items-center"><div className="opacity-50 text-center"><p className="text-xs">Quadro Geral</p><Fan className="mx-auto"/></div><ArrowRight className="text-slate-300"/><div className="bg-green-50 p-2 border border-green-400 rounded text-center"><p className="text-xs font-bold text-green-700">Quadro Crítico</p><Router className="mx-auto text-green-600"/><Lightbulb className="mx-auto text-green-600"/></div></div>;
+
+        // --- COMPONENTES MODAIS E RELATÓRIO ---
+        const PremiumModal = ({ isOpen, onClose }) => isOpen ? <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"><div className="bg-slate-900 border border-slate-700 p-6 rounded-2xl max-w-md w-full text-center"><Star className="mx-auto text-yellow-400 mb-4" size={40}/><h2 className="text-2xl font-bold text-white">Versão Premium</h2><p className="text-slate-400 mt-2 mb-6">Desbloqueie relatórios PDF completos.</p><button onClick={onClose} className="bg-slate-700 w-full py-3 rounded-xl text-white font-bold">Fechar</button></div></div> : null;
+        
+        const SalesPitchModal = ({ isOpen, onClose }) => isOpen ? <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4"><div className="bg-slate-900 border border-green-500 p-8 rounded-3xl max-w-lg w-full relative"><button onClick={onClose} className="absolute top-4 right-4 text-slate-400"><X/></button><div className="flex items-center gap-3 mb-4"><div className="bg-green-500/20 p-3 rounded-xl text-green-400"><Zap size={28}/></div><h2 className="text-2xl font-bold text-white">Baterias são o PRESENTE.</h2></div><p className="text-slate-300 mb-6">Venda segurança e não apenas economia. O Dossiê Premium calcula o custo da inércia.</p><button onClick={onClose} className="w-full bg-green-600 hover:bg-green-500 text-white py-4 rounded-xl font-bold text-lg">Ver Dimensionamento</button></div></div> : null;
+
+        const ReportDisplay = ({ content, projectData, results }) => {
+            const { structured } = content;
+            return (
+                <div className="w-full bg-white text-slate-900 p-8 rounded-3xl animate-in fade-in zoom-in duration-500">
+                    <header className="border-b pb-8 mb-8">
+                        <h1 className="text-4xl font-black text-slate-900 mb-2">{structured.tituloProposta}</h1>
+                        <p className="text-slate-500">Preparado para <strong>{projectData.cliente}</strong> por {projectData.integrador}</p>
+                    </header>
+                    <section className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+                        <div className="bg-green-50 p-6 rounded-2xl border border-green-100"><p className="text-xs uppercase font-bold text-green-600">Economia Anual</p><p className="text-3xl font-black text-green-800">R$ {structured.analiseFinanceira.economiaAnual.toLocaleString('pt-BR')}</p></div>
+                        <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100"><p className="text-xs uppercase font-bold text-blue-600">Payback</p><p className="text-3xl font-black text-blue-800">{results.paybackAnos.toFixed(1)} Anos</p></div>
+                        <div className="bg-amber-50 p-6 rounded-2xl border border-amber-100"><p className="text-xs uppercase font-bold text-amber-600">Custo da Inércia</p><p className="text-xl font-bold text-amber-800">R$ {results.custoInercia25Anos.toLocaleString('pt-BR', {maximumFractionDigits:0})}</p></div>
+                    </section>
+                    <section className="prose prose-slate max-w-none mb-12"><h3 className="text-xl font-bold flex gap-2"><FileText className="text-blue-600"/> Resumo Executivo</h3><p>{structured.resumoExecutivo}</p></section>
+                    <section className="mb-12 bg-slate-50 p-8 rounded-3xl border border-slate-200">
+                        <h3 className="text-xl font-bold mb-6 flex gap-2"><Landmark className="text-green-600"/> Análise Financeira</h3>
+                        <div className="h-64 bg-white rounded-xl p-4 border border-slate-100 mb-4"><CashFlowChart dataPoints={results.fluxoCaixaAcumulado}/></div>
+                        <p className="text-sm text-slate-600">{structured.analiseFinanceira.texto}</p>
+                    </section>
+                    {(projectData.systemType === 'HIB' || projectData.systemType === 'OFF') && (
+                        <section className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+                            <div className="bg-white p-6 rounded-2xl border border-slate-200"><h4 className="font-bold mb-4">Tecnologia BESS</h4><p className="text-sm text-slate-600 mb-4">{structured.educacaoBess?.oQueE}</p><BessOperationSchematic/></div>
+                            <div className="bg-white p-6 rounded-2xl border border-slate-200"><h4 className="font-bold mb-4">Instalação Crítica</h4><p className="text-sm text-slate-600 mb-4">{structured.educacaoBess?.explicacaoInstalacao}</p><CriticalLoadsSchematic/></div>
+                        </section>
+                    )}
+                    <footer className="text-center border-t pt-8"><p className="text-xl font-bold text-slate-900 mb-2">"{structured.conclusaoVenda}"</p><p className="text-sm text-slate-400">Gerado por CalculadoraPro AI</p></footer>
+                </div>
+            );
+        };
+
+        // --- APP PRINCIPAL ---
+        const App = () => {
+            const [step, setStep] = useState(1);
+            const [data, setData] = useState({ systemType: null, cliente: '', integrador: '', estado: 'SP', cidade: 'São Paulo', distribuidora: '', custoKwh: 0, consumoMensalKWh: 500, systemVoltage: '220V', tipoTarifa: 'B1', horasBackup: 4, cargas127V: 0, cargas220V: 0, cargas380V: 0, fatorSimultaneidade: 70, usaraZeroGrid: false, kWhApuradosMes: 0 });
+            const [results, setResults] = useState(null);
+            const [report, setReport] = useState(null);
+            const [isGen, setIsGen] = useState(false);
+            const [showPrem, setShowPrem] = useState(false);
+            const [showSales, setShowSales] = useState(false);
+
+            // Simulação de IA (Mock para não travar com CORS/API Key no arquivo local)
+            const generateReportMock = () => {
+                setIsGen(true);
+                setTimeout(() => {
+                    setReport({
+                        structured: {
+                            tituloProposta: "Plano de Independência Energética",
+                            resumoExecutivo: `Prezado(a) ${data.cliente}, esta proposta visa eliminar sua dependência da rede elétrica e protegê-lo contra a inflação energética.`,
+                            analiseTecnica: "Sistema dimensionado com equipamentos Tier 1 e baterias LFP de alta ciclagem.",
+                            analiseFinanceira: { texto: "Retorno superior a fundos imobiliários.", economiaAnual: results.economiaMensalEstimada * 12, economiaTotal25Anos: results.economiaMensalEstimada * 12 * 25 },
+                            impactoAmbiental: { texto: "Sua usina equivale a plantar árvores.", co2EvitadoToneladas: 150, arvoresSalvas: 450 },
+                            educacaoBess: { oQueE: "Baterias inteligentes armazenam o sol.", comoFunciona: "Carrega de dia, usa à noite.", explicacaoInstalacao: "Separamos o quadro para cargas críticas." },
+                            contextoLegal: { titulo: "Lei 14.300", explicacaoFioB: "Taxa sobre uso da rede.", impactoLei14300: "Baterias evitam essa taxa." },
+                            conclusaoVenda: "A melhor hora para investir é agora."
+                        }
+                    });
+                    setIsGen(false);
+                }, 2000);
+            };
+
+            const calc = () => {
+                const r = calculateDimensioning(data);
+                setResults(r);
+                setStep(5);
+                setTimeout(() => setShowSales(true), 800);
+            };
+
+            const renderStep1 = () => (
+                <div className="py-10 px-4 text-center animate-in fade-in slide-in-from-bottom-8 duration-700">
+                    <h2 className="text-5xl md:text-7xl font-extrabold text-white mb-8">Calculadora de <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-300">Baterias Pro</span></h2>
+                    <p className="text-slate-400 max-w-2xl mx-auto mb-16 text-xl">Dimensionamento profissional focado em lucratividade.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+                        <SystemOption icon={Sun} title="On-Grid" description="Rede" isSelected={data.systemType==='ONG'} onClick={()=>{setData({...data,systemType:'ONG'});setTimeout(()=>setStep(2),300)}}/>
+                        <SystemOption icon={BatteryCharging} title="Híbrido" description="Backup" isSelected={data.systemType==='HIB'} onClick={()=>{setData({...data,systemType:'HIB'});setTimeout(()=>setStep(2),300)}}/>
+                        <SystemOption icon={Unplug} title="Off-Grid" description="Isolado" isSelected={data.systemType==='OFF'} onClick={()=>{setData({...data,systemType:'OFF'});setTimeout(()=>setStep(2),300)}}/>
+                    </div>
+                </div>
+            );
+
+            const renderResultsView = () => (
+                <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
+                    <div className="text-center mb-12">
+                        <div className="inline-flex items-center gap-2 bg-green-500/10 text-green-400 px-4 py-1 rounded-full border border-green-500/30 mb-4"><CheckCircle size={14}/> Viabilidade Técnica</div>
+                        <h2 className="text-4xl font-bold text-white">Solução Energética</h2>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                        <ResultItem icon={Sun} title="Potência" value={`${results.potenciaPvKwP} kWp`} description="Sugerida" highlight/>
+                        <ResultItem icon={Lightbulb} title="Geração" value={`${results.dailyProductionKwh.toFixed(1)} kWh`} description="Diária Média"/>
+                        <ResultItem icon={Calculator} title="Inversor" value={`${results.potenciaInversorKw} kW`} description="Híbrido"/>
+                        <ResultItem icon={FileText} title="Economia" value={`R$ ${results.economiaMensalEstimada}`} description="Mensal" highlight/>
+                    </div>
+                    {(data.systemType==='HIB'||data.systemType==='OFF') && (
+                        <div className="bg-slate-800/50 border border-green-500/30 p-8 rounded-3xl mb-8 relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-teal-500"></div>
+                            <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-3"><BatteryCharging className="text-green-400"/> BESS (Battery System)</h3>
+                            <div className="grid md:grid-cols-3 gap-6">
+                                <ResultItem icon={Battery} title="Banco" value={`${results.energiaBessKwh} kWh`} description={`${results.numBaterias}x 5kWh`}/>
+                                <ResultItem icon={Zap} title="Inversor" value={`${results.potenciaInversorKw} kW`} description="Híbrido"/>
+                                <ResultItem icon={Gauge} title="Carga" value={`${results.effectiveLoadKw} kW`} description="Instantânea"/>
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex justify-center pb-20">
+                        {!report ? (
+                            <button onClick={generateReportMock} disabled={isGen} className="bg-green-600 hover:bg-green-500 text-white px-10 py-5 rounded-2xl font-bold text-xl flex items-center gap-3 transition-all hover:scale-105 shadow-lg shadow-green-900/30">
+                                {isGen ? <Loader2 className="animate-spin"/> : <FileText/>} {isGen ? 'Gerando IA...' : 'Gerar Relatório Premium'}
+                            </button>
+                        ) : <ReportDisplay content={report} projectData={data} results={results}/>}
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen pb-20">
+                    <header className="p-6 flex justify-between items-center fixed w-full z-50 bg-[#050b14]/80 backdrop-blur-md border-b border-white/5">
+                        <div className="flex items-center gap-3 cursor-pointer" onClick={()=>setStep(1)}><div className="bg-green-600 p-2 rounded-lg"><Zap className="text-white" size={20}/></div><span className="text-xl font-bold text-white">Calculadora<span className="text-green-400">.Pro</span></span></div>
+                        <button onClick={()=>setShowPrem(true)} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-full text-xs font-bold text-white transition-all"><Star size={12} className="text-yellow-400"/> UPGRADE</button>
+                    </header>
+                    <main className="pt-32 px-4">
+                        {step<=5 && <div className="flex justify-center gap-4 mb-12"><StepIndicator step={1} currentStep={step} title="Tipo"/><StepIndicator step={2} currentStep={step} title="Dados"/><StepIndicator step={3} currentStep={step} title="Energia"/><StepIndicator step={4} currentStep={step} title="Cargas"/><StepIndicator step={5} currentStep={step} title="Fim"/></div>}
+                        {step===1 && renderStep1()}
+                        {step===2 && <div className="max-w-4xl mx-auto glass-panel p-10 rounded-3xl"><h2 className="text-3xl font-bold text-white mb-8 text-center">Dados do Projeto</h2><div className="grid md:grid-cols-2 gap-6"><InputField label="Cliente" Icon={User} value={data.cliente} onChange={e=>setData({...data,cliente:e.target.value})}/><InputField label="Integrador" Icon={HardHat} value={data.integrador} onChange={e=>setData({...data,integrador:e.target.value})}/><div className="col-span-2"><label className="text-xs font-bold text-slate-500 uppercase ml-1">Estado</label><select value={data.estado} onChange={e=>setData({...data,estado:e.target.value})} className="w-full bg-slate-900/50 border border-white/10 text-white p-4 rounded-xl mt-2"><option value="SP">São Paulo</option><option value="RJ">Rio de Janeiro</option><option value="MG">Minas Gerais</option></select></div></div></div>}
+                        {step===3 && <div className="max-w-4xl mx-auto glass-panel p-10 rounded-3xl"><h2 className="text-3xl font-bold text-white mb-8 text-center">Consumo</h2><div className="grid md:grid-cols-2 gap-6"><InputField label="Consumo (kWh)" type="number" Icon={Lightbulb} value={data.consumoMensalKWh} onChange={e=>setData({...data,consumoMensalKWh:parseFloat(e.target.value)})}/><InputField label="Tarifa (R$)" type="number" Icon={DollarSign} value={data.custoKwh} onChange={e=>setData({...data,custoKwh:parseFloat(e.target.value)})}/></div></div>}
+                        {step===4 && <div className="max-w-5xl mx-auto"><h2 className="text-3xl font-bold text-white mb-8 text-center">Cargas & Autonomia</h2><div className="grid md:grid-cols-3 gap-6 mb-8"><InputField label="Cargas 127V (W)" type="number" Icon={LayoutDashboard} value={data.cargas127V} onChange={e=>setData({...data,cargas127V:parseFloat(e.target.value)})}/><InputField label="Cargas 220V (W)" type="number" Icon={LayoutDashboard} value={data.cargas220V} onChange={e=>setData({...data,cargas220V:parseFloat(e.target.value)})}/><InputField label="Cargas 380V (W)" type="number" Icon={LayoutDashboard} value={data.cargas380V} onChange={e=>setData({...data,cargas380V:parseFloat(e.target.value)})}/></div><div className="glass-panel p-8 rounded-3xl grid md:grid-cols-2 gap-6"><InputField label="Autonomia (h)" type="number" Icon={Battery} value={data.horasBackup} onChange={e=>setData({...data,horasBackup:parseFloat(e.target.value)})}/><InputField label="Simultaneidade (%)" type="number" Icon={Settings} value={data.fatorSimultaneidade} onChange={e=>setData({...data,fatorSimultaneidade:parseFloat(e.target.value)})}/></div></div>}
+                        {step===5 && renderResultsView()}
+                    </main>
+                    {step<=5 && <div className="fixed bottom-10 left-0 right-0 flex justify-center gap-4 pointer-events-none"><div className="pointer-events-auto flex gap-4"><button disabled={step===1} onClick={()=>setStep(s=>s-1)} className="bg-slate-800 px-6 py-3 rounded-xl text-white font-bold border border-white/10">Voltar</button>{step<5 && <button onClick={()=>step===4?calc():setStep(s=>s+1)} className="bg-blue-600 px-8 py-3 rounded-xl text-white font-bold shadow-lg shadow-blue-900/30">{step===4?'Calcular':'Próximo'}</button>}</div></div>}
+                    <PremiumModal isOpen={showPrem} onClose={()=>setShowPrem(false)}/><SalesPitchModal isOpen={showSales} onClose={()=>setShowSales(false)}/>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
